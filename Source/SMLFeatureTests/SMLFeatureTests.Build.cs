@@ -6,6 +6,7 @@ public class SMLFeatureTests : ModuleRules
 {
 	public SMLFeatureTests(ReadOnlyTargetRules Target) : base(Target)
 	{
+		CppStandard = CppStandardVersion.Cpp20;
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		// FactoryGame transitive dependencies
