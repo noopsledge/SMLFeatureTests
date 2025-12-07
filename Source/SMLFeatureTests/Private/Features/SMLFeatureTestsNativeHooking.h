@@ -20,8 +20,11 @@ protected:
 	struct SmallStruct { int Value; };
 	struct LargeStruct { unsigned char Prefix[60]; int Value; };
 
+	UFUNCTION()
 	static int GetValueStatic(int AmountToAdd);
+	UFUNCTION()
 	int GetValueMember(int AmountToAdd) const;
+	UFUNCTION()
 	virtual int GetValueVirtual(int AmountToAdd) const;
 
 	// Tests that we conform to the ABI When it comes to returning user-defined types.
@@ -34,4 +37,6 @@ private:
 	void TestStandardHooks();
 	void TestAfterHooks();
 	void TestMultiHooks();
+	void TestVtableHooks();
+	void TestUFunctionHooks();
 };

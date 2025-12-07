@@ -20,6 +20,8 @@ void USMLFeatureTestsNativeHooking::RunTest()
 		TestStandardHooks();
 		TestAfterHooks();
 		TestMultiHooks();
+		TestVtableHooks();
+		TestUFunctionHooks();
 	}
 }
 
@@ -332,6 +334,107 @@ void USMLFeatureTestsNativeHooking::TestMultiHooks()
 		check(GetValueStatic(25) == DEFAULT_VALUE + 25);
 		check(GetValueStatic(22) == DEFAULT_VALUE + 22);
 	}
+}
+
+void USMLFeatureTestsNativeHooking::TestVtableHooks()
+{
+	{
+		const FDelegateHandle Handler = SUBSCRIBE_VTABLE_ENTRY(USMLFeatureTestsNativeHooking::GetValueVirtual,
+			this,
+			[this](auto& Scope, const USMLFeatureTestsNativeHooking* Self, int AmountToAdd)
+			{
+				check(Self == this);
+				Scope.Override(MODDED_VALUE + AmountToAdd);
+			});
+
+		check(GetValueVirtual(23) == MODDED_VALUE + 23);
+		check(GetValueVirtual(24) == MODDED_VALUE + 24);
+
+		// Make sure that we haven't cheated by hooking the function normally, only dynamic dispatch should
+		// return a different result.
+		check(USMLFeatureTestsNativeHooking::GetValueVirtual(23) == DEFAULT_VALUE + 23);
+		check(USMLFeatureTestsNativeHooking::GetValueVirtual(24) == DEFAULT_VALUE + 24);
+
+		UNSUBSCRIBE_VTABLE_ENTRY(USMLFeatureTestsNativeHooking::GetValueVirtual, Handler);
+
+		check(GetValueVirtual(23) == DEFAULT_VALUE + 23);
+		check(GetValueVirtual(24) == DEFAULT_VALUE + 24);
+	}
+}
+
+void USMLFeatureTestsNativeHooking::TestUFunctionHooks()
+{
+	auto DoTest = [this](FName FunctionName, auto FunctionPointer, auto Subscribe, auto Unsubscribe)
+	{
+		static constexpr bool bIsMemberFunction = std::is_member_pointer_v<decltype(FunctionPointer)>;
+
+		auto DoCallNative = [this, FunctionPointer](int AmountToAdd)
+		{
+			if constexpr (bIsMemberFunction)
+			{
+				return (this->*FunctionPointer)(AmountToAdd);
+			}
+			else
+			{
+				return FunctionPointer(AmountToAdd);
+			}
+		};
+
+		auto DoCallReflection = [this, Function = FindFunctionChecked(FunctionName)](int AmountToAdd)
+		{
+			struct { int AmountToAdd, ReturnValue; } Params;
+			Params.AmountToAdd = AmountToAdd;
+			ProcessEvent(Function, &Params);
+			return Params.ReturnValue;
+		};
+
+		const FDelegateHandle Handler = Subscribe([this]
+		{
+			if constexpr (bIsMemberFunction)
+			{
+				return [this](auto& Scope, const USMLFeatureTestsNativeHooking* Self, int AmountToAdd)
+				{
+					check(Self == this);
+					Scope.Override(MODDED_VALUE + AmountToAdd);
+				};
+			}
+			else
+			{
+				return [](auto& Scope, int AmountToAdd)
+				{
+					Scope.Override(MODDED_VALUE + AmountToAdd);
+				};
+			}
+		}());
+
+		check(DoCallReflection(123) == MODDED_VALUE + 123);
+		check(DoCallReflection(456) == MODDED_VALUE + 456);
+
+		// Make sure that we haven't cheated by hooking the function normally, only dynamic dispatch should
+		// return a different result.
+		check(DoCallNative(123) == DEFAULT_VALUE + 123);
+		check(DoCallNative(456) == DEFAULT_VALUE + 456);
+
+		Unsubscribe(Handler);
+
+		check(DoCallReflection(123) == DEFAULT_VALUE + 123);
+		check(DoCallReflection(456) == DEFAULT_VALUE + 456);
+	};
+
+	// Static function.
+	DoTest(TEXT("GetValueStatic"), &USMLFeatureTestsNativeHooking::GetValueStatic,
+		[](auto Handler) { return SUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueStatic, Handler); },
+		[](FDelegateHandle HandlerHandle) { return UNSUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueStatic, HandlerHandle); });
+
+	// Member function.
+	DoTest(TEXT("GetValueMember"), &USMLFeatureTestsNativeHooking::GetValueMember,
+		[](auto Handler) { return SUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueMember, Handler); },
+		[](FDelegateHandle HandlerHandle) { return UNSUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueMember, HandlerHandle); });
+
+	// Virtual function.
+	DoTest(TEXT("GetValueVirtual"), &USMLFeatureTestsNativeHooking::GetValueVirtual,
+		[](auto Handler) { return SUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueVirtual, Handler); },
+		[](FDelegateHandle HandlerHandle) { return UNSUBSCRIBE_UFUNCTION_VM(USMLFeatureTestsNativeHooking, GetValueVirtual, HandlerHandle); });
 }
 
 UE_ENABLE_OPTIMIZATION_SHIP
