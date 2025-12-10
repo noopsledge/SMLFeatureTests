@@ -7,6 +7,7 @@ UE_DISABLE_OPTIMIZATION_SHIP
 int USMLFeatureTestsNativeHooking::GetValueStatic(int AmountToAdd) { return DEFAULT_VALUE + AmountToAdd; }
 int USMLFeatureTestsNativeHooking::GetValueMember(int AmountToAdd) const { return DEFAULT_VALUE + AmountToAdd; }
 int USMLFeatureTestsNativeHooking::GetValueVirtual(int AmountToAdd) const { return DEFAULT_VALUE + AmountToAdd; }
+int USMLFeatureTestsNativeHooking::GetValueInterface(int AmountToAdd) const { return DEFAULT_VALUE + AmountToAdd; }
 auto USMLFeatureTestsNativeHooking::GetSmallStructStatic(int AmountToAdd) -> SmallStruct { return { .Value = DEFAULT_VALUE + AmountToAdd }; }
 auto USMLFeatureTestsNativeHooking::GetLargeStructStatic(int AmountToAdd) -> LargeStruct { return { .Value = DEFAULT_VALUE + AmountToAdd }; }
 auto USMLFeatureTestsNativeHooking::GetSmallStructMember(int AmountToAdd) const -> SmallStruct { return { .Value = DEFAULT_VALUE + AmountToAdd }; }
@@ -79,6 +80,46 @@ void USMLFeatureTestsNativeHooking::TestStandardHooks()
 
 		check(GetValueVirtual(6) == DEFAULT_VALUE + 6);
 		check(GetValueVirtual(7) == DEFAULT_VALUE + 7);
+	}
+
+	// Virtual function on interface, using interface function pointer.
+	{
+		const FDelegateHandle Handler = SUBSCRIBE_METHOD_VIRTUAL(ISMLFeatureTestsNativeHookingInterface::GetValueInterface,
+			this,
+			[this](auto& Scope, const ISMLFeatureTestsNativeHookingInterface* Self, int AmountToAdd)
+			{
+				check(Self == this);
+				Scope.Override(MODDED_VALUE + AmountToAdd);
+			});
+
+		const ISMLFeatureTestsNativeHookingInterface* ThisInterface = this;
+
+		check(ThisInterface->GetValueInterface(10) == MODDED_VALUE + 10);
+		check(ThisInterface->GetValueInterface(11) == MODDED_VALUE + 11);
+
+		UNSUBSCRIBE_METHOD(ISMLFeatureTestsNativeHookingInterface::GetValueInterface, Handler);
+
+		check(ThisInterface->GetValueInterface(10) == DEFAULT_VALUE + 10);
+		check(ThisInterface->GetValueInterface(11) == DEFAULT_VALUE + 11);
+	}
+
+	// Virtual function on interface, using derived class function pointer.
+	{
+		const FDelegateHandle Handler = SUBSCRIBE_METHOD_VIRTUAL(USMLFeatureTestsNativeHooking::GetValueInterface,
+			this,
+			[this](auto& Scope, const USMLFeatureTestsNativeHooking* Self, int AmountToAdd)
+			{
+				check(Self == this);
+				Scope.Override(MODDED_VALUE + AmountToAdd);
+			});
+
+		check(GetValueInterface(10) == MODDED_VALUE + 10);
+		check(GetValueInterface(11) == MODDED_VALUE + 11);
+
+		UNSUBSCRIBE_METHOD(USMLFeatureTestsNativeHooking::GetValueInterface, Handler);
+
+		check(GetValueInterface(10) == DEFAULT_VALUE + 10);
+		check(GetValueInterface(11) == DEFAULT_VALUE + 11);
 	}
 
 	// Virtual function on UObject.
@@ -333,6 +374,41 @@ void USMLFeatureTestsNativeHooking::TestMultiHooks()
 
 		check(GetValueStatic(25) == DEFAULT_VALUE + 25);
 		check(GetValueStatic(22) == DEFAULT_VALUE + 22);
+	}
+
+	// Hook the same virtual function but on two different derived classes.
+	{
+		struct Base { virtual FString GetName() = 0; };
+		struct Derived1 : Base { FString GetName() override { return "Derived1"; } };
+		struct Derived2 : Base { FString GetName() override { return "Derived2"; } };
+
+		Derived1 Obj1;
+		Derived2 Obj2;
+		unsigned CalledHandler1 = 0;
+		unsigned CalledHandler2 = 0;
+
+		const FDelegateHandle Handler1 = SUBSCRIBE_METHOD_VIRTUAL(Base::GetName, &Obj1, [&](auto& Scope, Base* Obj)
+		{
+			check(Obj == &Obj1);
+			++CalledHandler1;
+		});
+
+		const FDelegateHandle Handler2 = SUBSCRIBE_METHOD_VIRTUAL(Base::GetName, &Obj2, [&](auto& Scope, Base* Obj)
+		{
+			check(Obj == &Obj2);
+			++CalledHandler2;
+		});
+
+		check(static_cast<Base*>(&Obj1)->GetName() == "Derived1");
+		check(CalledHandler1 == 1);
+		check(CalledHandler2 == 0);
+		check(static_cast<Base*>(&Obj2)->GetName() == "Derived2");
+		check(CalledHandler1 == 1);
+		check(CalledHandler2 == 1);
+		CalledHandler1 = CalledHandler2 = 0;
+
+		UNSUBSCRIBE_METHOD(Base::GetName, Handler1);
+		UNSUBSCRIBE_METHOD(Base::GetName, Handler2);
 	}
 }
 

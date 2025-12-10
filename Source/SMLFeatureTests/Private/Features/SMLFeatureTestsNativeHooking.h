@@ -4,11 +4,17 @@
 #include "UObject/NoExportTypes.h"
 #include "SMLFeatureTestsNativeHooking.generated.h"
 
+class ISMLFeatureTestsNativeHookingInterface
+{
+public:
+	virtual int GetValueInterface(int AmountToAdd) const = 0;
+};
+
 /**
  * Tests for NativeHookManager
  */
 UCLASS()
-class USMLFeatureTestsNativeHooking : public UObject
+class USMLFeatureTestsNativeHooking : public UObject, public ISMLFeatureTestsNativeHookingInterface
 {
 	GENERATED_BODY()
 
@@ -26,6 +32,8 @@ protected:
 	int GetValueMember(int AmountToAdd) const;
 	UFUNCTION()
 	virtual int GetValueVirtual(int AmountToAdd) const;
+	// ISMLFeatureTestsNativeHookingInterface
+	virtual int GetValueInterface(int AmountToAdd) const override;
 
 	// Tests that we conform to the ABI When it comes to returning user-defined types.
 	static SmallStruct GetSmallStructStatic(int AmountToAdd);
